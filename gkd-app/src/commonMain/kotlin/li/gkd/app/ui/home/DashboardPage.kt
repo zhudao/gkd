@@ -66,7 +66,7 @@ import li.gkd.app.ui.navigation.ActivityLogRoute
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
 import li.gkd.app.ui.navigation.WorkModeRoute
-import li.gkd.app.ui.platform.UiHost
+import li.gkd.app.ui.platform.LocalUiHost
 import li.gkd.app.ui.platform.setStatusServiceEnabled
 import li.gkd.app.ui.platform.switchAutomator
 import li.gkd.app.ui.style.itemHorizontalPadding
@@ -97,13 +97,15 @@ fun dashboardSummary(groups: RuleGroupSummary): String? =
 
 @Composable
 fun dashboardPage(
-    host: UiHost,
     vm: HomeViewModel,
 ): ScaffoldExt {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val appName = META.appName
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
     val scopeApps by SettingsRepository.a11yScopeAppList.collectAsStateWithLifecycle()
+    val automationScopeApps by
+        SettingsRepository.automationScopeAppList.collectAsStateWithLifecycle()
     val platform = dashboardPlatformState()
     val showRestrictionDetails by vm.showRestrictionDetails.collectAsStateWithLifecycle()
     if (showRestrictionDetails) {
@@ -236,10 +238,18 @@ fun dashboardPage(
                     }
                 }
                 ServiceStatusCard(
-                    stringResource(platform.subtitle(store, scopeApps)),
-                    platform.serviceEnabled(store, scopeApps),
+                    stringResource(platform.subtitle(store, scopeApps, automationScopeApps)),
+                    platform.serviceEnabled(store, scopeApps, automationScopeApps),
                     { enabled ->
-                        when (val route = platform.authorizationRoute(enabled, store, scopeApps)) {
+                        when (
+                            val route =
+                                platform.authorizationRoute(
+                                    enabled,
+                                    store,
+                                    scopeApps,
+                                    automationScopeApps,
+                                )
+                        ) {
                             PrivilegeServiceRoute -> vm.setShowRestrictionDetails(true)
                             null -> switchAutomator()
                             else -> mainVm.navigator.navigate(route)

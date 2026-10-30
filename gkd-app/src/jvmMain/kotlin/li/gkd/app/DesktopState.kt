@@ -29,15 +29,18 @@ import li.gkd.app.ui.navigation.ActivityLogRoute
 import li.gkd.app.ui.navigation.AdvancedPageRoute
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.AppRoute
+import li.gkd.app.ui.navigation.AutomationScopeAppListRoute
 import li.gkd.app.ui.navigation.BlockA11yAppListRoute
 import li.gkd.app.ui.navigation.BlockA11ySetupRoute
 import li.gkd.app.ui.navigation.CategoryEditorRoute
 import li.gkd.app.ui.navigation.CrashReportRoute
+import li.gkd.app.ui.navigation.DebugSettingsRoute
 import li.gkd.app.ui.navigation.EditBlockAppListRoute
 import li.gkd.app.ui.navigation.ExternalCallsRoute
 import li.gkd.app.ui.navigation.GkdLink
 import li.gkd.app.ui.navigation.HomeRoute
 import li.gkd.app.ui.navigation.ImagePreviewRoute
+import li.gkd.app.ui.navigation.KeepAliveRoute
 import li.gkd.app.ui.navigation.MatchDebugRoute
 import li.gkd.app.ui.navigation.NotificationTextRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
@@ -206,9 +209,7 @@ class DesktopState(
                 mainVm.navigator.popToHome()
             }
 
-            is GkdLink.Page ->
-                if (link.route == MatchDebugRoute) mainVm.navigator.openDiagnosticPage()
-                else mainVm.navigator.navigate(link.route)
+            is GkdLink.Page -> mainVm.navigator.openPage(link)
             GkdLink.WeChatScanner -> unsupported()
             null -> toast.show(Res.string.uri_unknown.getSync(uri))
         }
@@ -287,6 +288,8 @@ private val desktopRoutes by lazy {
         "work-mode" to WorkModeRoute,
         "snapshot-settings" to SnapshotSettingsRoute,
         "advanced" to AdvancedPageRoute,
+        "debug-settings" to DebugSettingsRoute,
+        "keep-alive" to KeepAliveRoute,
         "matching-debug" to MatchDebugRoute,
         "crash-reports" to CrashReportRoute,
         "activity-log" to ActivityLogRoute,
@@ -301,6 +304,7 @@ private val desktopRoutes by lazy {
         "subs-global-exclude" to SubsGlobalGroupExcludeRoute(SubscriptionIds.LOCAL, 0),
         "rule-exclude-editor" to RuleExcludeEditorRoute(SubscriptionIds.LOCAL, 0),
         "a11y-scope-apps" to A11YScopeAppListRoute,
+        "automation-scope-apps" to AutomationScopeAppListRoute,
         "block-a11y-apps" to BlockA11yAppListRoute,
         "app-config" to AppConfigRoute("li.gkd"),
         "action-log" to ActionLogRoute(),

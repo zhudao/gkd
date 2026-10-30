@@ -23,6 +23,8 @@ sealed interface AppRoute : NavKey {
 
 @Serializable data object A11YScopeAppListRoute : AppRoute
 
+@Serializable data object AutomationScopeAppListRoute : AppRoute
+
 @Serializable
 data class AppConfigRoute(
     val appId: String,
@@ -82,6 +84,10 @@ data class ActionLogRoute(
 @Serializable data object AboutRoute : AppRoute
 
 @Serializable data object AdvancedPageRoute : AppRoute
+
+@Serializable data object DebugSettingsRoute : AppRoute
+
+@Serializable data object KeepAliveRoute : AppRoute
 
 @Serializable data object MatchDebugRoute : AppRoute
 
