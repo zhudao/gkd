@@ -13,6 +13,8 @@ import li.gkd.app.matching.MatchInvalidationReason
 import li.gkd.app.matching.MatchingRuntime
 import li.gkd.app.matching.RuleAvailability
 import li.gkd.app.matching.RuleExecutionHost
+import li.gkd.app.matching.diagnostics.MatchPageObservation
+import li.gkd.app.matching.diagnostics.MatchStage
 import li.gkd.app.matching.retainUnaffectedExecution
 import li.gkd.app.record.AppVisitInput
 import li.gkd.app.record.RuntimeRecordRepository
@@ -60,8 +62,15 @@ object AndroidForegroundState {
         get() = synchronized(lock) { foregroundRulesFlow.value }
 
     private var page = Any()
+    private var confirmedPage: Any? = null
     val currentPage: Any
         get() = synchronized(lock) { page }
+
+    fun onWindowChanged(): Unit =
+        synchronized(lock) {
+            page = Any()
+            MatchingRuntime.coordinator.invalidate(MatchInvalidationReason.ForegroundConflict)
+        }
 
     fun onRulesChanged(snapshot: Loadable<RuleSummary>) {
         synchronized(lock) {
@@ -161,6 +170,7 @@ object AndroidForegroundState {
                     !decision.changed &&
                         !decision.appReentered &&
                         (scene == ActivityScene.Nodes ||
+                            scene == ActivityScene.TaskStack ||
                             decision.reason == ForegroundDecisionReason.TaskBelowConfirmedSurface ||
                             decision.reason == ForegroundDecisionReason.TaskBelowSystemSurface ||
                             decision.reason == ForegroundDecisionReason.ExitingSystemSurface)
@@ -265,6 +275,22 @@ object AndroidForegroundState {
                 }
             }
             foregroundRulesFlow.value = newActivityRule
+            val firstConfirmation = !rulesOnly && confirmedPage !== page
+            if (!rulesOnly) confirmedPage = page
+            if (MatchingRuntime.coordinator.diagnostics.enabled) {
+                MatchingRuntime.coordinator.diagnostics.record(
+                    0,
+                    MatchStage.Root,
+                    "page_confirmed",
+                    pageObservation =
+                        MatchPageObservation(
+                            System.identityHashCode(page),
+                            topActivity.appId,
+                            topActivity.activityId,
+                            firstConfirmation = firstConfirmation,
+                        ),
+                )
+            }
             MatchingRuntime.coordinator.updateRules(newActivityRule)
             LogUtils.i(
                 "${oldActivity.format()} -> ${topActivity.format()} " +

@@ -155,7 +155,7 @@ fun SnapshotPage() {
     val pendingUploads = selectedSnapshots.filter { it.githubAssetId == null }
     fun showLinks(targets: List<Snapshot>) {
         val links = targets.mapNotNull { snapshot ->
-            snapshot.githubAssetId?.let { AppLinks.ImportSnapshot + it }
+            snapshot.githubAssetId?.let { AppLinks.snapshot(it) }
         }
         if (links.isNotEmpty()) mainVm.textDialog.showText(links.joinToString("\n"))
     }
@@ -674,7 +674,7 @@ private fun SnapshotCard(
         Box(
             modifier =
                 Modifier.fillMaxWidth()
-                    .aspectRatio(1f)
+                    .aspectRatio(4f / 3f)
                     .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .background(colorScheme.surfaceVariant),
         ) {

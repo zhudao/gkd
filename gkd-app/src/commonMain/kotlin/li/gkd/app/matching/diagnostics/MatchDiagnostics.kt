@@ -78,6 +78,14 @@ data class MatchTrace(
     val blockingRunId: Long? = null,
     val eventDrop: MatchEventDrop? = null,
     val nodePressure: MatchNodePressure? = null,
+    val node: MatchNodeProvenance? = null,
+    val fastQuery: MatchFastQueryResult? = null,
+    val pageObservation: MatchPageObservation? = null,
+    val nodeRole: MatchNodeRole? = null,
+    val serviceConnection: MatchServiceConnection? = null,
+    val windowEvent: MatchWindowEvent? = null,
+    val actionTarget: MatchActionTarget? = null,
+    val taskObservation: MatchTaskObservation? = null,
 )
 
 @Serializable
@@ -112,6 +120,8 @@ data class MatchDiagnosticState(
     val openOperations: List<MatchOperation> = emptyList(),
     val omittedOperations: Long = 0,
     val stoppedAt: Long? = null,
+    val durationMillis: Long? = null,
+    val appIds: List<String> = emptyList(),
     val operationsAtStop: List<MatchOperation> = emptyList(),
     val trackingComplete: Boolean = false,
 )
@@ -124,6 +134,10 @@ class MatchDiagnostics(
 ) {
     private val lock = Any()
     private val events = ArrayDeque<MatchTrace>()
+    private val keyEvents = ArrayDeque<MatchTrace>()
+    private val boundaryEvents = ArrayDeque<MatchTrace>()
+    private var droppedBoundaryEvents = 0L
+    private var droppedKeyEvents = 0L
     private var sequence = 0L
     private var operationSequence = 0L
     private var operationStatistics = MatchOperationStatisticsRecorder()
@@ -196,6 +210,10 @@ class MatchDiagnostics(
             systemRecorder = null
             operationStatistics = MatchOperationStatisticsRecorder()
             events.clear()
+            keyEvents.clear()
+            boundaryEvents.clear()
+            droppedBoundaryEvents = 0
+            droppedKeyEvents = 0
             ruleSnapshots.clear()
             ruleDefinitions.clear()
             definitionSequence = 0L
@@ -274,6 +292,7 @@ class MatchDiagnostics(
                     current.copy(
                         active = false,
                         stoppedAt = wallTime(),
+                        durationMillis = (nanoTime() - origin) / 1_000_000,
                         operationsAtStop = current.openOperations,
                     )
         }
@@ -281,6 +300,7 @@ class MatchDiagnostics(
     fun captureRuntime(value: MatchDebugSnapshot) =
         synchronized(lock) {
             if (enabled) {
+                value.foreground?.foreground?.confirmed?.appId?.let(::observeApp)
                 runtime = value
                 runtimeCapturedAt = wallTime()
             }
@@ -304,6 +324,8 @@ class MatchDiagnostics(
             val current = checkNotNull(state.value)
             if (current.inputCheckpoint == null)
                 state.value = current.copy(inputCheckpoint = before)
+            observeApp(before.foreground.confirmed.appId)
+            decision.foreground?.confirmed?.appId?.let(::observeApp)
             val key = "input" to decision.reason
             entries[key] = (entries[key] ?: 0) + 1
             record(0, MatchStage.Root, decision.reason, input = input, inputDecision = decision)
@@ -314,6 +336,7 @@ class MatchDiagnostics(
         if (!enabled) return
         synchronized(lock) {
             if (!enabled) return
+            observeApp(rules.topActivity.appId)
             if (lastRules !== rules) {
                 if (ruleSnapshots.size == 16) {
                     ruleSnapshots.removeFirst()
@@ -330,6 +353,13 @@ class MatchDiagnostics(
                 lastRules = rules
             }
             record(runId, MatchStage.Rule, "rule_snapshot", ruleSnapshotId = snapshotSequence)
+        }
+    }
+
+    private fun observeApp(appId: String) {
+        val current = checkNotNull(state.value)
+        if (appId.isNotEmpty() && appId !in current.appIds) {
+            state.value = current.copy(appIds = current.appIds + appId)
         }
     }
 
@@ -473,6 +503,18 @@ class MatchDiagnostics(
                                 dropped = capture.session.dropped + if (dropped) 1 else 0,
                             ),
                         events = (if (dropped) capture.events.drop(1) else capture.events) + event,
+                        keyEvents =
+                            if (event.isKeyTrace())
+                                (capture.keyEvents + event).takeLast(previous.capacity)
+                            else capture.keyEvents,
+                        droppedKeyEvents =
+                            capture.droppedKeyEvents +
+                                if (
+                                    event.isKeyTrace() &&
+                                        capture.keyEvents.size == previous.capacity
+                                )
+                                    1
+                                else 0,
                     )
                 onStoppedCapture(export(operation.sessionId))
                 pruneStoppedSessions(operation.sessionId)
@@ -509,7 +551,7 @@ class MatchDiagnostics(
                     events.removeFirst()
                     state.value = checkNotNull(state.value).copy(dropped = current.dropped + 1)
                 }
-                events.addLast(
+                val event =
                     MatchTrace(
                         ++sequence,
                         wallTime(),
@@ -520,8 +562,9 @@ class MatchDiagnostics(
                         operation.rule,
                         entrySource = "operation",
                         operation = finished,
-                    ),
-                )
+                    )
+                events.addLast(event)
+                retainKeyEvent(event)
                 onStoppedCapture(export(current.id))
             }
         }
@@ -590,6 +633,14 @@ class MatchDiagnostics(
         blockingRunId: Long? = null,
         eventDrop: MatchEventDrop? = null,
         nodePressure: MatchNodePressure? = null,
+        node: MatchNodeProvenance? = null,
+        fastQuery: MatchFastQueryResult? = null,
+        pageObservation: MatchPageObservation? = null,
+        nodeRole: MatchNodeRole? = null,
+        serviceConnection: MatchServiceConnection? = null,
+        windowEvent: MatchWindowEvent? = null,
+        actionTarget: MatchActionTarget? = null,
+        taskObservation: MatchTaskObservation? = null,
     ) {
         if (!enabled) return
         synchronized(lock) {
@@ -620,7 +671,16 @@ class MatchDiagnostics(
                     blockingRunId,
                     eventDrop,
                     nodePressure,
+                    node,
+                    fastQuery,
+                    pageObservation,
+                    nodeRole,
+                    serviceConnection,
+                    windowEvent,
+                    actionTarget,
+                    taskObservation,
                 )
+            retainKeyEvent(event)
             val dropped =
                 if (events.size == capacity) {
                     events.removeFirst()
@@ -630,6 +690,7 @@ class MatchDiagnostics(
             state.value =
                 if (
                     entrySource != null ||
+                        serviceConnection != null ||
                         operation != null ||
                         (runId == 0L && (policy != null || input != null || ruleSnapshotId != null))
                 )
@@ -644,6 +705,22 @@ class MatchDiagnostics(
                         dropped = dropped,
                     )
         }
+    }
+
+    private fun retainKeyEvent(event: MatchTrace) {
+        if (event.serviceConnection != null || event.pageObservation != null) {
+            if (boundaryEvents.size == capacity) {
+                boundaryEvents.removeFirst()
+                droppedBoundaryEvents++
+            }
+            boundaryEvents.addLast(event)
+        }
+        if (!event.isKeyTrace()) return
+        if (keyEvents.size == capacity) {
+            keyEvents.removeFirst()
+            droppedKeyEvents++
+        }
+        keyEvents.addLast(event)
     }
 
     fun read(id: String, after: Long = 0, limit: Int = 200): MatchTracePage =
@@ -695,6 +772,10 @@ class MatchDiagnostics(
                     appId = META.appId,
                     appVersion = META.versionName,
                     platform = System.getProperty("os.name", "unknown") ?: "unknown",
+                    keyEvents = keyEvents.toList(),
+                    droppedKeyEvents = droppedKeyEvents,
+                    boundaryEvents = boundaryEvents.toList(),
+                    droppedBoundaryEvents = droppedBoundaryEvents,
                 ),
             )
         }

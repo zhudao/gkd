@@ -33,6 +33,153 @@ import li.gkd.db.SubsItem
 
 class MatchDiagnosticsTest {
     @Test
+    fun boundaryTimelineSurvivesQueryOverflowAndReportsItsOwnLoss() {
+        val diagnostics = MatchDiagnostics()
+        val session = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+        diagnostics.record(
+            0,
+            MatchStage.Root,
+            "page",
+            pageObservation = MatchPageObservation(1, "app", "Login", true),
+        )
+        repeat(30) { diagnostics.record(1, MatchStage.Selector, "matches[0]:miss") }
+        val capture = diagnostics.export(session.id)
+        assertTrue(capture.droppedKeyEvents > 0)
+        assertEquals(true, capture.boundaryEvents.single().pageObservation?.firstConfirmation)
+        assertEquals(0L, capture.droppedBoundaryEvents)
+        repeat(12) {
+            diagnostics.record(
+                0,
+                MatchStage.Root,
+                "update",
+                pageObservation = MatchPageObservation(1, "app", "Login", false),
+            )
+        }
+        diagnostics.stop(session.id)
+        val stopped = diagnostics.export(session.id)
+        assertEquals(10, stopped.boundaryEvents.size)
+        assertEquals(3L, stopped.droppedBoundaryEvents)
+        assertEquals(
+            stopped,
+            Json.decodeFromString<MatchDiagnosticCapture>(Json.encodeToString(stopped)),
+        )
+        val next = diagnostics.start(MatchTimingPolicy())
+        assertTrue(diagnostics.export(next.id).boundaryEvents.isEmpty())
+        assertEquals(stopped.boundaryEvents, diagnostics.export(session.id).boundaryEvents)
+    }
+
+    @Test
+    fun windowAndActionEvidenceSurvivesDetailEvictionAndExport() {
+        val diagnostics = MatchDiagnostics()
+        val session = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+        // An undefined event window must remain distinguishable from a real target window.
+        val event = MatchWindowEvent(32, -1, 0, 0, 100, "app", "Search")
+        val target = MatchActionTarget(7, "app", "more", -100, 20, 0, 120, true)
+        val task = MatchTaskObservation(9, "onTaskStackChanged", "app", "Search")
+        diagnostics.record(0, MatchStage.Root, "accessibility_event_received", windowEvent = event)
+        diagnostics.record(12, MatchStage.Action, "action_target", "rule", actionTarget = target)
+        diagnostics.record(0, MatchStage.Root, "task_result_received", taskObservation = task)
+        repeat(30) {
+            diagnostics.beginOperation("Selector.attr", 12, "rule")?.let {
+                diagnostics.endOperation(it, "null")
+            }
+        }
+        diagnostics.stop(session.id)
+        val capture =
+            Json.decodeFromString<MatchDiagnosticCapture>(
+                Json.encodeToString(diagnostics.export(session.id)),
+            )
+        assertTrue(capture.session.dropped > 0)
+        assertEquals(event, capture.keyEvents.single { it.windowEvent != null }.windowEvent)
+        val action = capture.keyEvents.single { it.actionTarget != null }
+        assertEquals(target, action.actionTarget)
+        assertEquals(12L, action.runId)
+        assertEquals("rule", action.rule)
+        assertEquals(task, capture.keyEvents.single { it.taskObservation != null }.taskObservation)
+    }
+
+    @Test
+    fun keyTimelineSurvivesDetailedComparisonEvictionAndKeepsReadAssociation() {
+        val diagnostics = MatchDiagnostics()
+        val session = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+        val origin =
+            MatchNodeProvenance(
+                1,
+                2,
+                li.gkd.app.settings.AutomatorMode.A11y,
+                MatchNodeSource.Root,
+                MatchNodeReadReason.Event,
+                3,
+                "app",
+                "Login",
+                4,
+                100,
+            )
+        val connection =
+            MatchServiceConnection(MatchServiceEvent.Connected, origin.service, origin.connectionId)
+        diagnostics.record(0, MatchStage.Idle, "service connected", serviceConnection = connection)
+        diagnostics.record(0, MatchStage.Root, "node_acquired", node = origin)
+        val observer = RuleSelectorDiagnostics<String>(diagnostics, session.id, 10, "rule")
+        // Detail traffic must not evict the only evidence of the service/page node read.
+        repeat(50) {
+            diagnostics.beginOperation("Selector.attr", 10, "rule")?.let {
+                diagnostics.endOperation(it, "null")
+            }
+        }
+        diagnostics.record(
+            10,
+            MatchStage.Root,
+            "node_used",
+            "rule",
+            node = origin.copy(ageMillis = 300),
+            nodeRole = MatchNodeRole.Source,
+        )
+        observer.outcome("matches[0]:miss")
+        diagnostics.record(
+            0,
+            MatchStage.Root,
+            "node_acquired",
+            node = origin.copy(readId = 5, acquiredAtMillis = 500),
+        )
+        diagnostics.record(
+            11,
+            MatchStage.Root,
+            "node_used",
+            "rule",
+            node = origin.copy(readId = 5, acquiredAtMillis = 500),
+            nodeRole = MatchNodeRole.Source,
+        )
+        diagnostics.record(11, MatchStage.Selector, "matched", "rule")
+        diagnostics.stop(session.id)
+        val capture = diagnostics.export(session.id)
+        assertTrue(capture.session.dropped > 0)
+        assertEquals(0L, capture.droppedKeyEvents)
+        assertEquals(connection, capture.keyEvents.first().serviceConnection)
+        assertTrue(capture.events.none { it.node?.readId == 1L && it.reason == "node_acquired" })
+        assertEquals(listOf(1L, 1L, 5L, 5L), capture.keyEvents.mapNotNull { it.node?.readId })
+        assertTrue(capture.keyEvents.any { it.reason == "matches[0]:miss" })
+        assertEquals(
+            capture,
+            Json.decodeFromString<MatchDiagnosticCapture>(Json.encodeToString(capture)),
+        )
+    }
+
+    @Test
+    fun keyTimelineReportsItsOwnEvictionAndRetainsLateQueryCompletion() {
+        val diagnostics = MatchDiagnostics()
+        val first = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+        repeat(12) { diagnostics.record(it.toLong(), MatchStage.Query, "query_started") }
+        val operation = diagnostics.beginOperation("Query", 12)!!
+        diagnostics.stop(first.id)
+        diagnostics.start(MatchTimingPolicy())
+        diagnostics.endOperation(operation, "not_matched")
+        val capture = diagnostics.export(first.id)
+        assertEquals(10, capture.keyEvents.size)
+        assertEquals(4L, capture.droppedKeyEvents)
+        assertEquals("not_matched", capture.keyEvents.last().operation?.outcome)
+    }
+
+    @Test
     fun operationTotalsSurviveDetailEvictionAndDoNotRetainQueryEvidence() {
         var nanos = 0L
         val diagnostics = MatchDiagnostics(nanoTime = { nanos })
