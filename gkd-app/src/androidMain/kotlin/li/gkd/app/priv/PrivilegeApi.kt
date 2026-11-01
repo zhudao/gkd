@@ -33,7 +33,7 @@ val privilegeContextFlow: StateFlow<PrivilegeContext?>
 private val userServiceSpec =
     PrivilegeUserServiceSpec(
         serviceClassName = UserService::class.java.name,
-        version = 3, // Bump whenever the UserService implementation or its AIDL contract changes.
+        version = 8, // Bump whenever the UserService implementation or its AIDL contract changes.
         embedded = true,
     )
 

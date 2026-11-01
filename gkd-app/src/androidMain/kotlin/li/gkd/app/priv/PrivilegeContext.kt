@@ -4,8 +4,10 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.IAccessibilityServiceClient
 import android.app.AppOpsManager
 import android.app.AppOpsManagerHidden
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -22,9 +24,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import li.gkd.aidl.IInstallResultListener
 import li.gkd.aidl.ISystemSurfaceListener
 import li.gkd.aidl.IUserService
 import li.gkd.app.META
+import li.gkd.app.MainActivity
 import li.gkd.app.app
 import li.gkd.app.appScope
 import li.gkd.app.logging.LogUtils
@@ -66,6 +70,19 @@ private constructor(
     private val userService = IUserService.Stub.asInterface(userServiceConnection.binder)
     private var taskStackListenerRegistered = false
     private var surfaceJob: Job? = null
+
+    fun createInstallResultSender(
+        callingPackage: String,
+        listener: IInstallResultListener,
+    ): IntentSender =
+        userService.createInstallResultSender(
+            Intent.makeRestartActivityTask(
+                ComponentName(META.appId, MainActivity::class.java.name),
+            ),
+            callingPackage,
+            currentUserId,
+            listener,
+        )
 
     fun observeSystemSurface() {
         if (android.os.Build.VERSION.SDK_INT < 34) return

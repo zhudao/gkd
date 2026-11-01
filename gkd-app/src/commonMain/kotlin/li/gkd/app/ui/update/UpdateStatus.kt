@@ -27,7 +27,10 @@ import li.gkd.app.network.NewVersion
 import li.gkd.app.network.UpdateClient
 import li.gkd.app.network.isNetworkRequestAllowed
 import li.gkd.app.network.logNetworkFailure
+import li.gkd.app.platform.PackageInstallCapability
 import li.gkd.app.platform.PlatformResult
+import li.gkd.app.platform.installPackagePrivileged
+import li.gkd.app.platform.privilegedPackageInstallCapability
 import li.gkd.app.platform.requestPackageInstall
 import li.gkd.app.resources.*
 import li.gkd.app.settings.FileSettingsStorage
@@ -36,6 +39,9 @@ import li.gkd.app.settings.UpdateChannel
 import li.gkd.app.storage.appStorage
 import li.gkd.app.ui.component.GkUpgradeDialogs
 import li.gkd.app.ui.component.UpdateDownloadState
+import li.gkd.app.ui.component.UpdateInstallState
+import li.gkd.app.ui.platform.LocalUiHost
+import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
 
@@ -53,6 +59,9 @@ class UpdateStatus(
     private val downloadStatus = MutableStateFlow<UpdateDownloadState?>(null)
     private var downloadJob: Job? = null
     private var downloaded: File? = null
+    private var downloadedVersion: NewVersion? = null
+    private val installState = MutableStateFlow<UpdateInstallState>(UpdateInstallState.Idle)
+    private val installCapability = privilegedPackageInstallCapability()
     private var versionUrl = ""
     private var lastManual = false
     private var lastCheckTime = 0L
@@ -104,10 +113,13 @@ class UpdateStatus(
     }
 
     private fun startDownload(version: NewVersion) {
+        if (installState.value is UpdateInstallState.Active) return
         if (downloadJob?.isActive == true) return
         newVersion.value = null
         downloadStatus.value = UpdateDownloadState.Loading(0f)
         downloaded = null
+        downloadedVersion = null
+        installState.value = UpdateInstallState.Idle
         val file = directory.resolve("gkd-v${version.versionCode}.apk")
         downloadJob = scope.launch {
             try {
@@ -125,6 +137,7 @@ class UpdateStatus(
                 }
                 ensureActive()
                 downloaded = file
+                downloadedVersion = version
                 downloadStatus.value = UpdateDownloadState.Success
             } catch (e: CancellationException) {
                 throw e
@@ -160,10 +173,36 @@ class UpdateStatus(
         }
     }
 
+    private fun installInternally(host: UiHost) {
+        if (installState.value is UpdateInstallState.Active) return
+        val file = downloaded ?: return
+        val version = downloadedVersion ?: return
+        installState.value = UpdateInstallState.Active
+        scope.launch {
+            try {
+                when (installPackagePrivileged(file, version.versionCode, host)) {
+                    is PlatformResult.Success -> installState.value = UpdateInstallState.Success
+                    PlatformResult.Unsupported -> {
+                        installState.value = UpdateInstallState.Idle
+                        ToastUtils.show(getString(Res.string.platform_action_unsupported))
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                installState.value = UpdateInstallState.Failure(e)
+            }
+        }
+    }
+
     @Composable
     fun UpgradeDialog() {
+        val host = LocalUiHost.current
         val version by newVersion.collectAsStateWithLifecycle()
         val status by downloadStatus.collectAsStateWithLifecycle()
+        val installation by installState.collectAsStateWithLifecycle()
+        val capability by
+            installCapability.collectAsStateWithLifecycle(PackageInstallCapability.Checking)
         val text = version?.let { value ->
             val logs = value.versionLogs.takeWhile { it.code > META.versionCode }
             ("v${META.versionName} -> v${value.versionName}\n\n" +
@@ -187,6 +226,10 @@ class UpdateStatus(
                     UpdateDownloadState.Failure(Exception(Res.string.download_abort.getSync()))
             },
             onDismissDownload = { downloadStatus.value = null },
+            installCapability = capability,
+            installState = installation,
+            downloadedVersion = downloadedVersion?.versionName,
+            onInternalInstall = { installInternally(host) },
             onInstall = {
                 downloaded?.let { file ->
                     try {

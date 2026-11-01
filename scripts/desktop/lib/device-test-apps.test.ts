@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Adb } from './device-automation.ts';
-import { cleanupDeviceTestApps, deviceTestAppsStatus, ensureDeviceTestApp, installGkdDebug, installedApkHash } from './device-test-apps.ts';
+import { cleanupDeviceTestApps, deviceTestAppsStatus, ensureDeviceTestApp, installGkd, installedApkHash } from './device-test-apps.ts';
 import { assertDesktopTestPath, desktopTests } from './local-paths.ts';
 import { withInstallConfirmation } from './device-install.ts';
 
@@ -118,21 +118,21 @@ test('unowned same-package APKs and externally replaced APKs are never updated o
   });
 });
 
-test('GKD build discovery, update and identical-APK skip never start diagnostic transport or make the app eligible for cleanup', async () => {
+for (const release of [false, true]) test('GKD ' + (release ? 'Release' : 'Debug') + ' build discovery, update and identical-APK skip never start diagnostic transport or make the app eligible for cleanup', async () => {
   await withFixture(async ({ directory, ledger, apk, device, reconnect }) => {
-    const gkd = 'li.songe.gkd.debug';
-    const output = join(directory, 'gkd-android/build/outputs/apk/gkd/debug');
+    const gkd = release ? 'li.songe.gkd' : 'li.songe.gkd.debug';
+    const output = join(directory, 'gkd-android/build/outputs/apk/gkd', release ? 'release' : 'debug');
     await mkdir(output, { recursive: true });
     await writeFile(join(output, 'gkd.apk'), await readFile(apk));
     device.installPackage = gkd;
     device.packages.set(gkd, hash(Buffer.from('previous GKD build')));
     // The fake adb rejects all HTTP forwarding/service commands: installation must stand alone.
-    assert.equal((await installGkdDebug(reconnect(), directory)).action, 'updated');
-    assert.equal((await installGkdDebug(reconnect(), directory)).action, 'unchanged');
+    assert.equal((await installGkd(reconnect(), release, directory)).action, 'updated');
+    assert.equal((await installGkd(reconnect(), release, directory)).action, 'unchanged');
     assert.equal(device.calls.filter(args => args[0] === 'install').length, 1);
     await writeFile(join(output, 'ambiguous.apk'), 'another build');
     const calls = device.calls.length;
-    await assert.rejects(installGkdDebug(reconnect(), directory), /expected one APK/);
+    await assert.rejects(installGkd(reconnect(), release, directory), /expected one APK/);
     assert.equal(device.calls.length, calls, 'Ambiguous builds must not touch the device');
     assert.equal((await deviceTestAppsStatus(reconnect(), ledger)).record, null);
     device.installPackage = fixture;

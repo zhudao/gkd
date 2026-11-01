@@ -59,10 +59,15 @@ async function installApkIfChanged(adb: Adb, packageName: string, apk: string) {
 
 /** Called inside the owner's automation pause/restore boundary; GKD is never a temporary test app. */
 export async function installGkdDebug(adb: Adb, repo = repositoryRoot) {
-  const folder = join(repo, 'gkd-android/build/outputs/apk/gkd/debug');
+  return installGkd(adb, false, repo);
+}
+
+export async function installGkd(adb: Adb, release: boolean, repo = repositoryRoot) {
+  const variant = release ? 'release' : 'debug';
+  const folder = join(repo, 'gkd-android/build/outputs/apk/gkd', variant);
   const apks = (await readdir(folder)).filter(name => name.endsWith('.apk'));
-  if (apks.length !== 1) throw new Error(`Build gkdDebug first: expected one APK in ${folder}`);
-  return installApkIfChanged(adb, 'li.songe.gkd.debug', join(folder, apks[0]!));
+  if (apks.length !== 1) throw new Error(`Build gkd ${variant} first: expected one APK in ${folder}`);
+  return installApkIfChanged(adb, release ? 'li.songe.gkd' : 'li.songe.gkd.debug', join(folder, apks[0]!));
 }
 
 /** Called inside the device's existing automation pause/restore boundary, which excludes concurrent captures. */
