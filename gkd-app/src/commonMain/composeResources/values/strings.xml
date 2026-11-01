@@ -117,6 +117,7 @@
     <string name="activity_log_title">界面日志</string>
     <string name="activity_record_description">记录打开的应用及界面</string>
     <string name="activity_record_service">记录服务</string>
+    <string name="activity_record_task_stack">任务栈</string>
     <string name="activity_record_service_no_permission">记录服务(无权限)</string>
     <string name="activity_service_description">显示当前界面信息</string>
     <string name="activity_service_label">界面服务</string>

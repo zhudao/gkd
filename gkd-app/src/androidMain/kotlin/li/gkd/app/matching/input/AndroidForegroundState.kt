@@ -61,6 +61,9 @@ object AndroidForegroundState {
     val currentRule: ForegroundRuleSnapshot
         get() = synchronized(lock) { foregroundRulesFlow.value }
 
+    val observedForegroundFlow: StateFlow<ForegroundDecision>
+        field = MutableStateFlow(MatchingRuntime.inputs.foregroundSnapshot())
+
     private var page = Any()
     private var confirmedPage: Any? = null
     val currentPage: Any
@@ -118,6 +121,7 @@ object AndroidForegroundState {
                     sourceTimeMillis,
                 )
             val decision = checkNotNull(result.foreground)
+            observedForegroundFlow.value = decision
             foregroundPending = decision.pending != null
             if (result.cancelWork) {
                 page = Any()
@@ -155,6 +159,7 @@ object AndroidForegroundState {
                         sourceTimeMillis,
                     )
                 val decision = checkNotNull(inputDecision.foreground)
+                observedForegroundFlow.value = decision
                 foregroundPending = decision.pending != null
                 if (foregroundPending) {
                     if (inputDecision.cancelWork) {

@@ -8,16 +8,19 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
@@ -141,12 +144,29 @@ abstract class OverlayWindowService(
         title: String,
         onMinimizeRequest: (() -> Unit)? = null,
         minimizeContentDescription: String = stringResource(Res.string.window_minimize),
+        label: String? = null,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
         ) {
             GkIcon(imageVector = DragPan, modifier = Modifier.iconTextSize())
-            Text(text = title, modifier = Modifier.weight(1f))
+            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(text = title, modifier = Modifier.weight(1f, fill = false))
+                if (label != null) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier =
+                            Modifier.padding(horizontal = 4.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                    MaterialTheme.shapes.extraSmall,
+                                )
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+            }
             if (onMinimizeRequest != null) {
                 GkIcon(
                     imageVector = GkIcons.CollapseContent,
