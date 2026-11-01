@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.os.DeadObjectException
 import android.os.IBinder
 import android.os.Process
 import android.view.IWindowManager
@@ -76,7 +77,11 @@ private constructor(
                     val previous = subscription ?: return
                     subscription = null
                     previous.deactivate()
-                    userService.setSystemSurfaceListener(null)
+                    try {
+                        userService.setSystemSurfaceListener(null)
+                    } catch (_: DeadObjectException) {
+                        // The remote process is gone; local cleanup is already complete.
+                    }
                 }
                 try {
                     combine(SettingsRepository.settings, uiAutomationFlow, A11yService.isRunning) {
@@ -154,8 +159,14 @@ private constructor(
                 activityManager.value.unregisterTaskStackListener(CompatTaskStackListener)
                 taskStackListenerRegistered = false
             }
+        } catch (_: DeadObjectException) {
+            // A dead remote process no longer needs its listeners unregistered.
         } finally {
-            userServiceConnection.unbind()
+            try {
+                userServiceConnection.unbind()
+            } catch (_: DeadObjectException) {
+                // The UserService manager has already exited.
+            }
         }
     }
 
