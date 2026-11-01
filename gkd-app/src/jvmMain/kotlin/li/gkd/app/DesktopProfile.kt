@@ -7,9 +7,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.platform.Font
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -134,17 +133,14 @@ object DesktopProfile {
         )
     }
 
+    @OptIn(ExperimentalTextApi::class)
     val typography: Typography by lazy {
         val base = Typography()
-        val file = directory.resolve("DeviceSans.ttf")
         val family =
-            if (file.isFile)
-                FontFamily(
-                    Font(file, weight = FontWeight.Normal),
-                    Font(file, weight = FontWeight.Medium),
-                    Font(file, weight = FontWeight.Bold),
-                )
-            else FontFamily.Default
+            if (System.getProperty("os.name") == "Windows 7") {
+                // Avoid relying on Windows 7's default font fallback for Chinese glyphs.
+                FontFamily("Microsoft YaHei")
+            } else FontFamily.Default
         base.copy(
             displayLarge = base.displayLarge.copy(fontFamily = family),
             displayMedium = base.displayMedium.copy(fontFamily = family),

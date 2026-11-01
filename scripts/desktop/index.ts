@@ -20,7 +20,6 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   help: { type: 'boolean', short: 'h' }, output: { type: 'string' },
   serial: { type: 'string' }, apps: { type: 'string' },
   release: { type: 'boolean' },
-  font: { type: 'string', default: '/system/fonts/MiSansVF.ttf' },
   install: { type: 'boolean' }, screens: { type: 'boolean' },
   'open-gkd': { type: 'boolean' },
   trace: { type: 'string' },
@@ -39,7 +38,7 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
 try {
   const command = positionals[0];
   if (values.help || !command) {
-    console.log(`pnpm app-tools capture-profile [--serial SERIAL] [--apps FILE] [--font DEVICE_PATH] [--install] [--screens] [--output DIR]
+    console.log(`pnpm app-tools capture-profile [--serial SERIAL] [--apps FILE] [--install] [--screens] [--output DIR]
 pnpm app-tools services [--port 8888 | --connection FILE]
 pnpm app-tools check-subscription-http [--port 8888 | --connection FILE]
 pnpm app-tools check-matching-debug [--port 8888 | --connection FILE]
@@ -131,7 +130,7 @@ If recovery fails, keep .local/device-recovery and use device-recovery after rec
     const port = await resolveDesktopPort(values.port, values.connection);
     console.log(await checkSubscriptionHttp(new DesktopClient(port)));
   } else if (command === 'capture-profile') {
-    await captureProfile({ serial: values.serial, apps: values.apps, font: values.font,
+    await captureProfile({ serial: values.serial, apps: values.apps,
       install: !!values.install, screens: !!values.screens,
       output: resolve(values.output ?? desktopProfile) }, repo);
   } else if (['services', 'service-start', 'service-stop', 'service-event'].includes(command)) {

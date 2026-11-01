@@ -9,7 +9,7 @@ import { installGkdDebug } from '../lib/device-test-apps.ts';
 import { withInstallConfirmation } from '../lib/device-install.ts';
 import { createAdb } from '../lib/device-adb.ts';
 export interface CaptureOptions {
-  serial?: string; apps?: string; font: string; install: boolean; screens: boolean; output: string;
+  serial?: string; apps?: string; install: boolean; screens: boolean; output: string;
 }
 const packageName = 'li.songe.gkd.debug';
 const remote = `/sdcard/Android/data/${packageName}/files`;
@@ -58,7 +58,6 @@ export async function captureProfile(options: CaptureOptions, repo: string) {
       await extractProfile(await readFile(archive), staging);
       await unlink(archive);
       check();
-      await adb('pull', options.font, join(staging, 'DeviceSans.ttf'));
       if (options.apps) {
         const inventory = JSON.parse((await readFile(options.apps, 'utf8')).replace(/^\uFEFF/, ''));
         if (!inventory || !Array.isArray(inventory.apps)) throw new Error('apps.json must contain an apps array');

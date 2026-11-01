@@ -79,7 +79,7 @@ pnpm app-tools capture-profile --install --screens
 ./gradlew.bat :gkd-app:run
 ```
 
-工具位于根目录 `scripts/desktop`，支持 `--serial`、`--apps`、`--font`、`--install`、`--screens`、`--output`，不会自行构建 APK。省略 `--apps` 时使用设备导出的应用清单；默认字体路径为 `/system/fonts/MiSansVF.ttf`，其他设备通过 `--font` 指定。
+工具位于根目录 `scripts/desktop`，支持 `--serial`、`--apps`、`--install`、`--screens`、`--output`，不会自行构建 APK。省略 `--apps` 时使用设备导出的应用清单。
 
 工具先记录自动化开关和运行模式，关闭自动化并确认后导出，最后仅恢复这两个字段并核对。中断或断连后的恢复记录位于 `.local/device-recovery/`；重新连接后运行 `pnpm app-tools device-recovery --serial SERIAL --operation restore`，仅恢复本次两个字段。新采集会跨采集目录检查同一设备的待恢复记录。资料校验、暂存及真机恢复成功后才替换目标 profile，失败保留原资料。
 
