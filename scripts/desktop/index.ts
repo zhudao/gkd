@@ -19,7 +19,7 @@ import { collectExpressionCorpus } from './commands/expression-corpus.ts';
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   help: { type: 'boolean', short: 'h' }, output: { type: 'string' },
   serial: { type: 'string' }, apps: { type: 'string' },
-  font: { type: 'string', default: '/system/fonts/MiSansVF.ttf' },
+  release: { type: 'boolean' },
   install: { type: 'boolean' }, screens: { type: 'boolean' },
   'open-gkd': { type: 'boolean' },
   trace: { type: 'string' },
@@ -38,7 +38,7 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
 try {
   const command = positionals[0];
   if (values.help || !command) {
-    console.log(`pnpm app-tools capture-profile [--serial SERIAL] [--apps FILE] [--font DEVICE_PATH] [--install] [--screens] [--output DIR]
+    console.log(`pnpm app-tools capture-profile [--serial SERIAL] [--apps FILE] [--install] [--screens] [--output DIR]
 pnpm app-tools services [--port 8888 | --connection FILE]
 pnpm app-tools check-subscription-http [--port 8888 | --connection FILE]
 pnpm app-tools check-matching-debug [--port 8888 | --connection FILE]
@@ -52,8 +52,8 @@ pnpm app-tools matching-summary --input FILE [--output FILE]
 pnpm app-tools expression-corpus --input SUBSCRIPTIONS_DIR --output FILE
 pnpm app-tools matching-binder-summary --input BENCHMARK_JSON --trace TRACE --output JSON [--trace-processor PATH]
 pnpm app-tools device-app-debug --serial SERIAL --operation readiness|app|catalog|foreground|capabilities|engine [--attach | --install] [--output FILE]
-pnpm app-tools device-install [--serial SERIAL]
-pnpm app-tools device-recovery --serial SERIAL --operation status|restore
+pnpm app-tools device-install [--release] [--serial SERIAL]
+pnpm app-tools device-recovery --serial SERIAL --operation status|restore [--release]
 pnpm app-tools device-matching-benchmark --serial SERIAL --input JSON [--install] [--open-gkd] [--output FILE] [--trace FILE]
 pnpm app-tools device-service-stop-check --serial SERIAL [--install] [--output FILE]
 pnpm app-tools device-query-safety --serial SERIAL [--install] [--output FILE]
@@ -63,7 +63,7 @@ Service commands require an isolated Desktop (--test). Services: Status, Button,
 Events: Authorized, Cancelled, Connected, Failed. Use the attempt returned by services.
 
 Device commands require adb and an installed gkdDebug app; --install also needs a built APK and skips identical installed content. Controlled capture restores automation settings in finally.
-device-install builds gkdDebug once and updates the specified device or all connected, authorized devices in sequence.
+device-install builds gkdDebug (or gkdRelease with --release) once and installs on the specified device or all connected, authorized devices in sequence. Release builds do not upload build assets.
 Query checks retain their test app across commands; finish a whole debugging round with device-test-apps --operation cleanup.
 --attach requires an already running Debug app; it preserves settings, page and shared transport. Session operations require --attach.
 If recovery fails, keep .local/device-recovery and use device-recovery after reconnecting.`);
@@ -83,7 +83,7 @@ If recovery fails, keep .local/device-recovery and use device-recovery after rec
   }
   else if (command === 'device-recovery') {
     if (!values.serial) throw new Error('--serial is required');
-    console.log(JSON.stringify(await deviceRecovery(values.serial, values.operation ?? 'status'), null, 2));
+    console.log(JSON.stringify(await deviceRecovery(values.serial, values.operation ?? 'status', values.release), null, 2));
   }
   else if (command === 'device-diagnostic-performance') {
     if (!values.serial || !values.apps) throw new Error('--serial and --apps are required');
@@ -94,7 +94,7 @@ If recovery fails, keep .local/device-recovery and use device-recovery after rec
     console.log(await checkDiagnosticPage(values.serial, values.output ?? '.local/tests/diagnostic-page', values.apps));
   }
   else if (command === 'device-install') {
-    console.log(JSON.stringify(await deviceInstall(values.serial), null, 2));
+    console.log(JSON.stringify(await deviceInstall(values.serial, values.release), null, 2));
   }
   else if (command === 'device-test-apps') {
     if (!values.serial) throw new Error('--serial is required');
@@ -130,7 +130,7 @@ If recovery fails, keep .local/device-recovery and use device-recovery after rec
     const port = await resolveDesktopPort(values.port, values.connection);
     console.log(await checkSubscriptionHttp(new DesktopClient(port)));
   } else if (command === 'capture-profile') {
-    await captureProfile({ serial: values.serial, apps: values.apps, font: values.font,
+    await captureProfile({ serial: values.serial, apps: values.apps,
       install: !!values.install, screens: !!values.screens,
       output: resolve(values.output ?? desktopProfile) }, repo);
   } else if (['services', 'service-start', 'service-stop', 'service-event'].includes(command)) {

@@ -54,18 +54,20 @@ ZIP 输出到 `.local/desktop-packages/gkd.win-<架构>.zip`。解压完整的 `
 
 绿色版数据、profile 和模拟配置保存在 `GKD.exe` 同目录的 `.local/desktop/`；`--test` 使用同目录的 `.local/tests/desktop/<会话ID>/`。可以整体移动目录，启动不依赖工作目录或源码仓库。请解压到可写目录；升级时保留已有 `.local/`。Gradle `run` 仍使用仓库根目录的 `.local/`。
 
-## 构建并更新真机 Debug
+## 构建并安装真机 Debug / Release
 
-设备需已安装并初始化 GKD Debug。在仓库根目录运行：
+Debug 更新要求已安装并初始化 GKD Debug；Release 支持首次安装。在仓库根目录运行：
 
 ```powershell
 # 构建一次，再顺序更新全部已连接且已授权的设备
 pnpm app-tools device-install
 # 只更新指定设备
 pnpm app-tools device-install --serial SERIAL
+# 构建并安装 gkd Release（也可加 --serial）
+pnpm app-tools device-install --release
 ```
 
-命令位于 `scripts/desktop`，执行 `:gkd-android:assembleGkdDebug` 后直接复用公共安装流程，不启动调试服务。省略 `--serial` 时跳过离线或未授权设备；单台更新失败会保留原因，继续其余设备，最后汇总失败。安装前暂停自动化，相同 APK 按 SHA-256 跳过，不同则覆盖更新；仅确认已核对身份的本次安装弹窗。每台设备结束时恢复并核对本次设置字段，GKD 本体不加入临时测试应用清理列表。此命令替代已删除的 `.local/install.ps1`。
+命令位于 `scripts/desktop`，默认执行 `:gkd-android:assembleGkdDebug`；`--release` 执行 `:gkd-android:packageGkdRelease`（不上传构建产物），随后直接复用公共安装流程，不启动调试服务。省略 `--serial` 时跳过离线或未授权设备；单台更新失败会保留原因，继续其余设备，最后汇总失败。安装前暂停自动化，相同 APK 按 SHA-256 跳过，不同则覆盖更新；仅确认已核对身份的本次安装弹窗。每台设备结束时恢复并核对本次设置字段，GKD 本体不加入临时测试应用清理列表。Release 安装会暂停已存在的 Debug 和 Release 自动化；Release 恢复记录位于 `.local/device-recovery/release/`，失败后可运行 `pnpm app-tools device-recovery --serial SERIAL --operation restore --release`。此命令替代已删除的 `.local/install.ps1`。
 
 ## 导入设备资料
 
@@ -77,7 +79,7 @@ pnpm app-tools capture-profile --install --screens
 ./gradlew.bat :gkd-app:run
 ```
 
-工具位于根目录 `scripts/desktop`，支持 `--serial`、`--apps`、`--font`、`--install`、`--screens`、`--output`，不会自行构建 APK。省略 `--apps` 时使用设备导出的应用清单；默认字体路径为 `/system/fonts/MiSansVF.ttf`，其他设备通过 `--font` 指定。
+工具位于根目录 `scripts/desktop`，支持 `--serial`、`--apps`、`--install`、`--screens`、`--output`，不会自行构建 APK。省略 `--apps` 时使用设备导出的应用清单。
 
 工具先记录自动化开关和运行模式，关闭自动化并确认后导出，最后仅恢复这两个字段并核对。中断或断连后的恢复记录位于 `.local/device-recovery/`；重新连接后运行 `pnpm app-tools device-recovery --serial SERIAL --operation restore`，仅恢复本次两个字段。新采集会跨采集目录检查同一设备的待恢复记录。资料校验、暂存及真机恢复成功后才替换目标 profile，失败保留原资料。
 

@@ -4,9 +4,9 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { repositoryRoot } from '../lib/local-paths.ts';
 import { createAdb } from '../lib/device-adb.ts';
-import { withAutomationPaused } from '../lib/device-automation.ts';
+import { createDeviceAutomation, withAutomationPaused } from '../lib/device-automation.ts';
 import { withInstallConfirmation } from '../lib/device-install.ts';
-import { installGkdDebug } from '../lib/device-test-apps.ts';
+import { installGkd } from '../lib/device-test-apps.ts';
 
 const exec = promisify(execFile);
 
@@ -25,13 +25,15 @@ export function installDevices(output: string, serial?: string) {
   return { selected: selected.map(device => device.serial), skipped: devices.filter(device => device.state !== 'device') };
 }
 
-async function build(signal: AbortSignal) {
+async function build(signal: AbortSignal, release: boolean) {
   signal.throwIfAborted();
   // Use the repository wrapper so JAVA_HOME, JAVA_OPTS and GRADLE_OPTS retain their normal behavior.
   const windows = process.platform === 'win32';
+  // Release's assemble task uploads build assets when credentials are configured.
+  const task = release ? ':gkd-android:packageGkdRelease' : ':gkd-android:assembleGkdDebug';
   const child = spawn(windows ? process.env.ComSpec ?? 'cmd.exe' : './gradlew', windows
-    ? ['/d', '/s', '/c', 'gradlew.bat :gkd-android:assembleGkdDebug --console=plain']
-    : [':gkd-android:assembleGkdDebug', '--console=plain'], {
+    ? ['/d', '/s', '/c', `gradlew.bat ${task} --console=plain`]
+    : [task, '--console=plain'], {
     cwd: repositoryRoot, windowsHide: true, stdio: 'inherit',
   });
   // On Windows the batch wrapper owns a Java child; stop that owned tree on cancellation.
@@ -48,7 +50,7 @@ async function build(signal: AbortSignal) {
   try {
     await new Promise<void>((resolve, reject) => {
       child.once('error', reject);
-      child.once('close', (code, exitSignal) => code === 0 ? resolve() : reject(new Error(`gkd Debug build failed (${exitSignal ?? code})`)));
+      child.once('close', (code, exitSignal) => code === 0 ? resolve() : reject(new Error(`gkd ${release ? 'Release' : 'Debug'} build failed (${exitSignal ?? code})`)));
       if (signal.aborted) interrupt();
     });
   } finally {
@@ -59,7 +61,7 @@ async function build(signal: AbortSignal) {
 }
 
 /** Build once, then update selected devices without starting a diagnostic server. */
-export async function deviceInstall(serial?: string) {
+export async function deviceInstall(serial?: string, release = false) {
   const cancellation = new AbortController();
   const interrupt = () => cancellation.abort(new Error('Device installation interrupted; no further devices will be updated'));
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);
@@ -69,7 +71,7 @@ export async function deviceInstall(serial?: string) {
     const { selected, skipped } = installDevices(devices, serial);
     for (const device of skipped) console.warn(`Skipping ${device.serial}: ${device.state}`);
     console.log(`Target devices: ${selected.join(', ')}`);
-    await build(cancellation.signal);
+    await build(cancellation.signal, release);
     const failures: Error[] = [];
     for (const device of selected) {
       cancellation.signal.throwIfAborted();
@@ -79,11 +81,30 @@ export async function deviceInstall(serial?: string) {
         await mkdir(parent, { recursive: true });
         const folder = await mkdtemp(join(parent, 'update-'));
         const adb = withInstallConfirmation(createAdb(device), cancellation.signal);
-        await withAutomationPaused(adb, folder, async () => {
+        const install = async () => {
           cancellation.signal.throwIfAborted();
-          console.log('GKD APK:', await installGkdDebug(adb));
+          console.log('GKD APK:', await installGkd(adb, release));
           cancellation.signal.throwIfAborted();
-        });
+        };
+        if (release) {
+          const packages = (await adb('shell', 'pm', 'list', 'packages', 'li.songe.gkd')).toString().split(/\r?\n/);
+          const installRelease = async () => {
+            if (packages.includes('package:li.songe.gkd')) {
+              await createDeviceAutomation('li.songe.gkd').withAutomationPaused(adb, folder, install, undefined, { reopenApp: false });
+            } else {
+              await install();
+            }
+          };
+          if (packages.includes('package:li.songe.gkd.debug')) {
+            await withAutomationPaused(adb, folder, installRelease, undefined, { reopenApp: false });
+          } else {
+            await installRelease();
+          }
+          cancellation.signal.throwIfAborted();
+          await adb('shell', 'am', 'start', '-n', 'li.songe.gkd/li.gkd.app.MainActivity');
+        } else {
+          await withAutomationPaused(adb, folder, install);
+        }
       } catch (error) {
         const failure = new Error(`Device ${device} failed`, { cause: error });
         if (cancellation.signal.aborted) throw failure;

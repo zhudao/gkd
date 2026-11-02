@@ -946,7 +946,14 @@
     <string name="update_interval_three_days">每3天</string>
     <string name="update_interval_weekly">每7天</string>
     <string name="update_new_version">新版本</string>
-    <string name="update_ready_to_install">可继续选择安装新版本</string>
+    <string name="update_ready_to_install">下载完成，是否安装？</string>
+    <string name="update_system_install">外部安装</string>
+    <string name="update_installing">安装中…</string>
+    <string name="update_installed">安装完成</string>
+    <string name="update_installed_description">新版本已安装，请重新打开应用。</string>
+    <string name="update_install_failed">安装失败</string>
+    <string name="update_install_failed_status">安装失败，状态码：%1$s</string>
+    <string name="update_install_invalid_apk">安装包与当前应用或目标版本不匹配</string>
     <string name="update_success">更新成功</string>
     <string name="update_time_description">更新时间 %1$s</string>
     <string name="update_version_ignored">已忽略此版本</string>
