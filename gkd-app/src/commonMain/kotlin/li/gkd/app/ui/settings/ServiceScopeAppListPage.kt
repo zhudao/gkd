@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -263,16 +264,17 @@ fun ServiceScopeAppListPage(kind: ServiceScopeKind) {
                                         },
                                     )
                                 }
+                                if (kind == ServiceScopeKind.Companion) {
+                                    GkIconButton(
+                                        imageVector = GkIcons.HelpOutline,
+                                        contentDescription = stringResource(Res.string.help_view),
+                                        onClick =
+                                            vm.scope.launchUiAction { vm.showCompanionHelp() },
+                                    )
+                                }
                             }
                         },
                     )
-                    if (kind.help != null) {
-                        GkIconButton(
-                            imageVector = GkIcons.HelpOutline,
-                            contentDescription = stringResource(Res.string.help_view),
-                            onClick = vm.scope.launchUiAction { vm.showHelp() },
-                        )
-                    }
                 },
             )
         },
@@ -322,6 +324,24 @@ fun ServiceScopeAppListPage(kind: ServiceScopeKind) {
                 modifier = Modifier.scaffoldPadding(contentPadding),
                 state = listState,
             ) {
+                if (kind == ServiceScopeKind.Companion) {
+                    item {
+                        Surface(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.companion_paused_apps_description),
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 items(appInfos, { it.id }) { appInfo ->
                     GkAppCheckboxCard(
                         appIcon = { GkAppIcon(appInfo.id, 32.dp) },

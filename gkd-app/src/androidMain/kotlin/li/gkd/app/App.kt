@@ -47,8 +47,8 @@ import li.gkd.app.platform.lifecycle.RuntimeStateSynchronizer
 import li.gkd.app.priv.PrivilegeOwnerLifecycle
 import li.gkd.app.priv.gkdPrivilegeUiConfig
 import li.gkd.app.priv.initPrivilege
+import li.gkd.app.priv.requestPrivilegeRecovery
 import li.gkd.app.service.clearDebugSubscription
-import li.gkd.app.service.initServiceScope
 import li.gkd.app.snapshot.initVolumeSnapshotTrigger
 import li.gkd.app.subscription.SubscriptionDefaults
 import li.gkd.app.subscription.SubscriptionRepository
@@ -146,14 +146,13 @@ class App : Application() {
             .toHashSet()
     }
 
-    fun putSecureA11yServices(services: Set<ComponentName>) {
+    fun putSecureA11yServices(services: Set<ComponentName>): Boolean =
         putSecureString(
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             services.joinToString(ENABLED_ACCESSIBILITY_SERVICES_SEPARATOR.toString()) {
                 it.flattenToShortString()
             },
         )
-    }
 
     fun resolveAppId(intent: Intent): String? {
         return intent.resolveActivity(packageManager)?.packageName
@@ -277,14 +276,11 @@ class App : Application() {
         appScope.launchLogged(Dispatchers.IO) {
             PrivilegeUi.prepareExternalShellScript(gkdPrivilegeUiConfig.manualShellScriptPath)
         }
-        appScope.launchLogged(Dispatchers.IO) {
-            PrivilegeUi.startSilently(gkdPrivilegeUiConfig)
-        }
+        requestPrivilegeRecovery()
         appScope.launchLogged(Dispatchers.IO) {
             SubscriptionRepository.initialize(SubscriptionDefaults.fromResources())
             clearDebugSubscription()
         }
-        initServiceScope()
         RuntimeStateSynchronizer.requestSync()
     }
 }

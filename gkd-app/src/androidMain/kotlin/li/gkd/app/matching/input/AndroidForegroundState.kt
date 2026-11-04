@@ -20,7 +20,7 @@ import li.gkd.app.record.AppVisitInput
 import li.gkd.app.record.RuntimeRecordRepository
 import li.gkd.app.rule.RuleSummary
 import li.gkd.app.rule.TopActivity
-import li.gkd.app.service.updateTopTaskAppId
+import li.gkd.app.service.onTopTaskAppChanged
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.state.Loadable
 import li.gkd.app.util.Constants
@@ -30,9 +30,22 @@ import li.songe.codeorigin.CallSite
 val foregroundRulesFlow: StateFlow<ForegroundRuleSnapshot>
     get() = AndroidForegroundState.foregroundRulesFlow
 
-val topActivityFlow = foregroundRulesFlow.map { it.topActivity }.distinctUntilChanged()
 val currentTopActivity: TopActivity
     get() = foregroundRulesFlow.value.topActivity
+
+data class AndroidForegroundObservation(
+    // The latest system task, including observations the matcher filters during surface
+    // transitions.
+    val task: ForegroundIdentity?,
+    val confirmed: ForegroundIdentity,
+)
+
+val topTaskAppIdFlow =
+    AndroidForegroundState.observedForegroundFlow
+        .map { it.task?.appId.orEmpty() }
+        .distinctUntilChanged()
+val topTaskAppId: String
+    get() = AndroidForegroundState.observedForegroundFlow.value.task?.appId.orEmpty()
 
 sealed class ActivityScene {
     data object ScreenOn : ActivityScene()
@@ -61,8 +74,14 @@ object AndroidForegroundState {
     val currentRule: ForegroundRuleSnapshot
         get() = synchronized(lock) { foregroundRulesFlow.value }
 
-    val observedForegroundFlow: StateFlow<ForegroundDecision>
-        field = MutableStateFlow(MatchingRuntime.inputs.foregroundSnapshot())
+    val observedForegroundFlow: StateFlow<AndroidForegroundObservation>
+        field =
+            MutableStateFlow(
+                AndroidForegroundObservation(
+                    task = null,
+                    confirmed = MatchingRuntime.inputs.foregroundSnapshot().confirmed,
+                ),
+            )
 
     private var page = Any()
     private var confirmedPage: Any? = null
@@ -121,7 +140,6 @@ object AndroidForegroundState {
                     sourceTimeMillis,
                 )
             val decision = checkNotNull(result.foreground)
-            observedForegroundFlow.value = decision
             foregroundPending = decision.pending != null
             if (result.cancelWork) {
                 page = Any()
@@ -132,19 +150,25 @@ object AndroidForegroundState {
                 AndroidAutomationSessions.service?.matchHost?.confirmForeground()
         }
 
-    private var lastAppId = Constants.systemUiAppId
+    private var lastVisitedAppId = Constants.systemUiAppId
 
+    private fun recordVisit(appId: String, time: Long, refresh: Boolean = false) {
+        val previousAppId = lastVisitedAppId
+        if (!refresh && previousAppId == appId) return
+        lastVisitedAppId = appId
+        val visit = AppVisitInput(previousAppId, appId, time)
+        appScope.launchLogged { RuntimeRecordRepository.recordVisit(visit) }
+    }
+
+    /** Returns whether this observation dispatched a top-task package change. */
     fun updateTopActivity(
         appId: String,
         activityId: String?,
         scene: ActivityScene = ActivityScene.A11y,
         sourceTimeMillis: Long? = null,
         @CallSite loc: String = "",
-    ): Unit =
+    ): Boolean =
         synchronized(lock) {
-            if (scene == ActivityScene.TaskStack) {
-                updateTopTaskAppId(appId)
-            }
             if (scene != ActivityScene.ScreenOn) {
                 val source =
                     when (scene) {
@@ -152,15 +176,28 @@ object AndroidForegroundState {
                         ActivityScene.Nodes -> ForegroundSource.Nodes
                         else -> ForegroundSource.Accessibility
                     }
+                val identity = ForegroundIdentity(appId, activityId)
                 val inputDecision =
                     MatchingRuntime.inputs.accept(
-                        MatchInput.Foreground(source, ForegroundIdentity(appId, activityId)),
+                        MatchInput.Foreground(source, identity),
                         MatchingRuntime.coordinator.policy.value,
                         sourceTimeMillis,
                     )
                 val decision = checkNotNull(inputDecision.foreground)
-                observedForegroundFlow.value = decision
                 foregroundPending = decision.pending != null
+                val previousTask = observedForegroundFlow.value.task
+                val task = if (source == ForegroundSource.TaskStack) identity else previousTask
+                val taskAppChanged =
+                    source == ForegroundSource.TaskStack && appId != previousTask?.appId
+                observedForegroundFlow.value =
+                    AndroidForegroundObservation(task = task, confirmed = decision.confirmed)
+                if (taskAppChanged) {
+                    // A short task visit can end before the matcher confirms its nodes.
+                    if (decision.reason != ForegroundDecisionReason.TaskBelowSystemSurface) {
+                        recordVisit(appId, System.currentTimeMillis())
+                    }
+                    onTopTaskAppChanged(identity)
+                }
                 if (foregroundPending) {
                     if (inputDecision.cancelWork) {
                         page = Any()
@@ -169,7 +206,7 @@ object AndroidForegroundState {
                         )
                     }
                     AndroidAutomationSessions.service?.matchHost?.confirmForeground()
-                    return@synchronized
+                    return@synchronized taskAppChanged
                 }
                 if (
                     !decision.changed &&
@@ -180,7 +217,7 @@ object AndroidForegroundState {
                             decision.reason == ForegroundDecisionReason.TaskBelowSystemSurface ||
                             decision.reason == ForegroundDecisionReason.ExitingSystemSurface)
                 )
-                    return@synchronized
+                    return@synchronized taskAppChanged
                 applyTopActivity(
                     decision.confirmed.appId,
                     decision.confirmed.activityId,
@@ -188,9 +225,10 @@ object AndroidForegroundState {
                     loc,
                     appReentered = decision.appReentered,
                 )
-                return@synchronized
+                return@synchronized taskAppChanged
             }
             applyTopActivity(appId, activityId, scene, loc)
+            false
         }
 
     private fun applyTopActivity(
@@ -259,10 +297,11 @@ object AndroidForegroundState {
                     blockMatch = SettingsRepository.checkAppBlockMatch(topActivity.appId),
                 )
             if (idChanged) {
-                val oldAppId = lastAppId
-                lastAppId = appId
-                val visit = AppVisitInput(oldAppId, appId, wallTime)
-                appScope.launchLogged { RuntimeRecordRepository.recordVisit(visit) }
+                recordVisit(
+                    appId,
+                    wallTime,
+                    refresh = appReentered || scene == ActivityScene.ScreenOn,
+                )
                 RuleExecutionHost.runtime.onAppChanged(t)
                 ruleSummary.globalRules.forEach { it.resetState(t) }
                 ruleSummary.appIdToRules[oldActivityRule.topActivity.appId]?.forEach {
